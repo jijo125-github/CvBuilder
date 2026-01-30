@@ -3,20 +3,30 @@ import OpenAI from 'openai'
 
 const router = express.Router()
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-})
+// Initialize client lazily to ensure env vars are loaded
+let client = null
+
+function getClient() {
+  if (!client) {
+    if (!process.env.GITHUB_TOKEN && !process.env.OPENAI_API_KEY) {
+      throw new Error(
+        "Neither GITHUB_TOKEN nor OPENAI_API_KEY is configured. Please add one to your .env file."
+      )
+    }
+    
+    client = new OpenAI({
+      baseURL: process.env.GITHUB_TOKEN 
+        ? 'https://models.inference.ai.azure.com'
+        : undefined,
+      apiKey: process.env.GITHUB_TOKEN || process.env.OPENAI_API_KEY
+    })
+  }
+  return client
+}
 
 router.post('/', async (req, res) => {
   try {
     const { messages, resumeData, jobDescription } = req.body
-
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({
-        message: 'OpenAI API key not configured. Please add OPENAI_API_KEY to your .env file.'
-      })
-    }
 
     // Build system prompt with context
     const systemPrompt = buildSystemPrompt(resumeData, jobDescription)
@@ -30,9 +40,14 @@ router.post('/', async (req, res) => {
       }))
     ]
 
-    // Call OpenAI API
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+    // Call AI API (GitHub Models or OpenAI)
+    const modelName = process.env.GITHUB_TOKEN 
+      ? 'gpt-4o-mini'  // GitHub Models - free tier
+      : 'gpt-4-turbo-preview'  // OpenAI
+    
+    const aiClient = getClient()
+    const completion = await aiClient.chat.completions.create({
+      model: modelName,
       messages: openAIMessages,
       temperature: 0.7,
       max_tokens: 1500
@@ -72,17 +87,39 @@ Your responsibilities:
 5. Suggest improvements to the professional summary
 6. Maintain honesty - never fabricate experience
 
-When suggesting resume updates, provide specific, actionable advice. If you're making concrete changes, format them clearly so they can be applied to the resume.
+IMPORTANT: When you suggest changes, return them in this JSON format at the end of your response:
+###RESUME_UPDATE###
+{
+  "summary": "Updated professional summary...",
+  "skills": ["skill1", "skill2", ...],
+  "experience": [{"title": "...", "company": "...", "duration": "...", "responsibilities": ["..."]}]
+}
+###END_UPDATE###
 
 Be conversational, helpful, and encouraging. Focus on helping the user present their actual skills and experience in the best light for the target role.`
 }
 
 function parseResumeUpdate(aiResponse, currentResume) {
-  // Simple parsing logic - in a real app, you'd use more sophisticated parsing
-  // or have the AI return structured JSON
+  try {
+    // Look for JSON update in the AI response
+    const updateMatch = aiResponse.match(/###RESUME_UPDATE###\n([\s\S]*?)\n###END_UPDATE###/)
+    
+    if (updateMatch) {
+      const updateData = JSON.parse(updateMatch[1])
+      
+      // Merge with current resume, only updating fields that are provided
+      return {
+        ...currentResume,
+        ...(updateData.summary && { summary: updateData.summary }),
+        ...(updateData.skills && { skills: updateData.skills }),
+        ...(updateData.experience && { experience: updateData.experience }),
+        ...(updateData.education && { education: updateData.education })
+      }
+    }
+  } catch (error) {
+    console.error('Failed to parse resume update:', error)
+  }
   
-  // For now, return null and let updates be manual
-  // You can enhance this to parse specific update commands from the AI
   return null
 }
 

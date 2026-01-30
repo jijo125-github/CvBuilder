@@ -2,6 +2,8 @@ import { useState } from 'react'
 import ChatInterface from './components/ChatInterface'
 import ResumePreview from './components/ResumePreview'
 import JobDescriptionInput from './components/JobDescriptionInput'
+import ResumeInput from './components/ResumeInput'
+import ResumeUpload from './components/ResumeUpload'
 
 function App() {
   const [resumeData, setResumeData] = useState({
@@ -30,6 +32,14 @@ function App() {
           <h1 className="text-2xl font-bold text-gray-800">AI Resume Builder</h1>
           <p className="text-sm text-gray-600 mt-1">Customize your resume with AI</p>
         </div>
+        <ResumeUpload 
+          setResumeData={setResumeData}
+          setMessages={setChatMessages}
+        />
+        <ResumeInput 
+          resumeData={resumeData}
+          setResumeData={setResumeData}
+        />
         
         <JobDescriptionInput 
           jobDescription={jobDescription}
