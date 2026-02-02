@@ -23,11 +23,8 @@ export default function ResumeUpload({ setResumeData, setMessages }) {
     formData.append('resume', file)
 
     try {
-      const response = await axios.post('/api/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      })
+      // Let the browser set the Content-Type (including the boundary)
+      const response = await axios.post('/api/upload', formData)
 
       if (response.data.success) {
         setResumeData(response.data.resumeData)
@@ -52,8 +49,17 @@ export default function ResumeUpload({ setResumeData, setMessages }) {
         setTimeout(() => setUploadStatus(''), 3000)
       }
     } catch (error) {
+      // Log more detailed response information for debugging
       console.error('Upload error:', error)
-      setUploadStatus('❌ Error uploading resume. Please try again.')
+      if (error.response) {
+        console.error('Response data:', error.response.data)
+        setUploadStatus(`❌ ${error.response.data?.message || 'Error uploading resume.'}`)
+      } else if (error.request) {
+        console.error('No response received:', error.request)
+        setUploadStatus('❌ No response from server. Is the backend running?')
+      } else {
+        setUploadStatus(`❌ ${error.message}`)
+      }
       setTimeout(() => setUploadStatus(''), 3000)
     } finally {
       setIsUploading(false)

@@ -49,8 +49,8 @@ router.post('/', async (req, res) => {
     const completion = await aiClient.chat.completions.create({
       model: modelName,
       messages: openAIMessages,
-      temperature: 0.7,
-      max_tokens: 1500
+      temperature: 0.2,
+      max_tokens: 1800
     })
 
     const aiResponse = completion.choices[0].message.content
@@ -72,31 +72,38 @@ router.post('/', async (req, res) => {
 })
 
 function buildSystemPrompt(resumeData, jobDescription) {
-  return `You are an expert resume consultant and career advisor. Your role is to help users customize their resumes based on job descriptions.
+  return `You are an expert resume consultant and career advisor. Your role is to convert the provided resume (JSON) and job description into a tailored, ATS-friendly resume update.
 
 Current Resume Data:
 ${JSON.stringify(resumeData, null, 2)}
 
 ${jobDescription ? `Job Description:\n${jobDescription}\n\n` : ''}
 
-Your responsibilities:
-1. Analyze the job description and identify key skills, qualifications, and requirements
-2. Suggest specific changes to the resume to better match the job
-3. Rewrite bullet points to highlight relevant experience
-4. Recommend skills to emphasize or add
-5. Suggest improvements to the professional summary
-6. Maintain honesty - never fabricate experience
+Goals and rules:
+- Identify the job's key skills, tools, and requirements.
+- For each experience entry in the resume, rewrite existing responsibility bullets so they emphasize relevant skills from the job description while staying truthful to the user's original experience. Do NOT invent new jobs, companies, or durations.
+- If the job mentions a specific tool (e.g., "AWS Connect") and the resume lists a related platform (e.g., "AWS services"), rephrase bullets to explicitly connect them (e.g., "Leveraged AWS services to ...; familiar with AWS contact-center concepts such as AWS Connect"). Avoid fabricating exact implementations—use generic language like "experience with AWS services" unless the resume already names specific services.
+- Prefer action-driven, quantified bullets when information exists. Keep bullets concise (1-2 lines each).
+- Also suggest added skills to the top-level \`skills\` array if they are relevant and truthful.
 
-IMPORTANT: When you suggest changes, return them in this JSON format at the end of your response:
+Example transformation (illustrative):
+Input experience responsibility: "Managed AWS infrastructure and built automation scripts."
+Job requires: "Experience with AWS Connect"
+Output bullet (rewritten): "Managed AWS infrastructure and automation; applied AWS services in support of contact-center integrations and customer-routing workflows."
+
+IMPORTANT: At the end of your response, ONLY include a JSON object wrapped between the markers below. Do not include any extra explanation outside the markers.
 ###RESUME_UPDATE###
 {
-  "summary": "Updated professional summary...",
-  "skills": ["skill1", "skill2", ...],
-  "experience": [{"title": "...", "company": "...", "duration": "...", "responsibilities": ["..."]}]
+  "summary": "...updated summary...",
+  "skills": ["skill1","skill2"],
+  "experience": [
+    { "title": "...", "company": "...", "duration": "...", "responsibilities": ["rewritten bullet 1","rewritten bullet 2"] }
+  ],
+  "education": []
 }
 ###END_UPDATE###
 
-Be conversational, helpful, and encouraging. Focus on helping the user present their actual skills and experience in the best light for the target role.`
+Maintain a helpful tone but return ONLY the JSON markers and content as specified.`
 }
 
 function parseResumeUpdate(aiResponse, currentResume) {

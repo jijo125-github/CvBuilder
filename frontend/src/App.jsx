@@ -24,6 +24,28 @@ function App() {
     }
   ])
 
+  const parseJobDescription = async (description) => {
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            { role: 'user', content: 'Please tailor my resume to the provided job description and return suggested resume updates in the response.' }
+          ],
+          resumeData,
+          jobDescription: description
+        })
+      })
+      const data = await resp.json()
+      // Return the backend response so the caller can preview/apply
+      return data
+    } catch (err) {
+      console.error('Failed to parse job description:', err)
+      return null
+    }
+  }
+
   return (
     <div className="flex h-screen bg-gray-100">
       {/* Left Side - Chat Interface */}
@@ -44,6 +66,9 @@ function App() {
         <JobDescriptionInput 
           jobDescription={jobDescription}
           setJobDescription={setJobDescription}
+          parseJobDescription={parseJobDescription}
+          resumeData={resumeData}
+          setResumeData={setResumeData}
         />
         
         <ChatInterface 

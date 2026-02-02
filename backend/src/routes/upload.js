@@ -2,8 +2,22 @@ import express from 'express'
 import multer from 'multer'
 import pdfParse from 'pdf-parse'
 import mammoth from 'mammoth'
+import OpenAI from 'openai'
 
 const router = express.Router()
+
+// Initialize OpenAI client lazily
+let aiClient = null
+function getAIClient() {
+  if (!aiClient) {
+    if (!process.env.GITHUB_TOKEN && !process.env.OPENAI_API_KEY) return null
+    aiClient = new OpenAI({
+      baseURL: process.env.GITHUB_TOKEN ? 'https://models.inference.ai.azure.com' : undefined,
+      apiKey: process.env.GITHUB_TOKEN || process.env.OPENAI_API_KEY
+    })
+  }
+  return aiClient
+}
 
 // Configure multer for file uploads
 const storage = multer.memoryStorage()
@@ -26,39 +40,113 @@ router.post('/', upload.single('resume'), async (req, res) => {
       return res.status(400).json({ message: 'No file uploaded' })
     }
 
+    console.log(`Received resume upload: ${req.file.originalname} (${req.file.mimetype}, ${req.file.size} bytes)`)
+
     let extractedText = ''
 
     // Parse PDF
     if (req.file.mimetype === 'application/pdf') {
-      const pdfData = await pdfParse(req.file.buffer)
-      extractedText = pdfData.text
+      try {
+        const pdfData = await pdfParse(req.file.buffer)
+        extractedText = pdfData.text
+      } catch (err) {
+        console.error('PDF parsing error:', err)
+        return res.status(400).json({ success: false, message: 'Failed to parse PDF. Is the file a valid, text-based PDF?' })
+      }
     }
     // Parse DOCX
     else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      const result = await mammoth.extractRawText({ buffer: req.file.buffer })
-      extractedText = result.value
+      try {
+        const result = await mammoth.extractRawText({ buffer: req.file.buffer })
+        extractedText = result.value
+      } catch (err) {
+        console.error('DOCX parsing error:', err)
+        return res.status(400).json({ success: false, message: 'Failed to parse DOCX file.' })
+      }
     }
     // Parse DOC (older format)
     else if (req.file.mimetype === 'application/msword') {
-      const result = await mammoth.extractRawText({ buffer: req.file.buffer })
-      extractedText = result.value
+      try {
+        const result = await mammoth.extractRawText({ buffer: req.file.buffer })
+        extractedText = result.value
+      } catch (err) {
+        console.error('DOC parsing error:', err)
+        return res.status(400).json({ success: false, message: 'Failed to parse DOC file.' })
+      }
     }
 
-    // Parse the extracted text into structured resume data
-    const resumeData = parseResumeText(extractedText)
+    if (!extractedText || extractedText.trim().length === 0) {
+      console.warn('No text extracted from resume')
+      return res.status(400).json({ success: false, message: 'No text could be extracted from the uploaded file. It may be a scanned PDF. Try an OCR-enabled PDF or a different file.' })
+    }
+
+    // Try OpenAI-based parsing first (if API key available), otherwise fallback to local parser
+    let parsedResume = null
+    let parserUsed = 'local'
+    try {
+      const client = getAIClient()
+      if (client) {
+        parserUsed = 'openai'
+        const modelName = process.env.GITHUB_TOKEN ? 'gpt-4o-mini' : 'gpt-4o-mini' // keep a compact model name
+
+        const systemPrompt = `You are a strict JSON generator. Convert the following resume plain text into a JSON object with the schema:\n{\n  name, email, phone, location, linkedin, summary, skills:[], certifications:[], projects:[], accomplishments:[], experience:[{title, company, duration, responsibilities:[] }], education:[{degree, school, year}]\n}\nOnly return the JSON object and nothing else. If a field is not present, return an empty string or empty array. Do not add or invent experience.`
+
+        const completion = await client.chat.completions.create({
+          model: modelName,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: extractedText }
+          ],
+          temperature: 0,
+          max_tokens: 1500
+        })
+
+        const aiText = completion.choices?.[0]?.message?.content || ''
+        // Try to extract JSON from AI response heuristically
+        let jsonText = aiText.trim()
+        // If response contains markdown or code fences, strip them
+        jsonText = jsonText.replace(/^```json\s*/i, '').replace(/\s*```$/, '')
+
+        try {
+          parsedResume = JSON.parse(jsonText)
+        } catch (err) {
+          // If direct parse fails, try to find first { ... } block
+          const firstBrace = jsonText.indexOf('{')
+          const lastBrace = jsonText.lastIndexOf('}')
+          if (firstBrace !== -1 && lastBrace !== -1) {
+            const candidate = jsonText.substring(firstBrace, lastBrace + 1)
+            try {
+              parsedResume = JSON.parse(candidate)
+            } catch (err2) {
+              parsedResume = null
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('OpenAI parsing failed:', err)
+      parsedResume = null
+      parserUsed = 'local'
+    }
+
+    // Fallback to local parser when needed
+    const resumeData = parsedResume || parseResumeText(extractedText)
 
     res.json({
       success: true,
       message: 'Resume parsed successfully',
       resumeData: resumeData,
-      rawText: extractedText.substring(0, 1000) // Send first 1000 chars for debugging
+      parserUsed,
+      rawText: extractedText.substring(0, 2000) // send more for debugging
     })
 
   } catch (error) {
     console.error('Error parsing resume:', error)
     res.status(500).json({
       success: false,
-      message: `Error parsing resume: ${error.message}`
+      message: `Error parsing resume: ${error.message}`,
+      // include stack when available to aid debugging (safe in dev)
+      stack: error.stack
     })
   }
 })
@@ -73,6 +161,7 @@ function parseResumeText(text) {
     location: '',
     linkedin: '',
     summary: '',
+    accomplishments: [],
     experience: [],
     education: [],
     skills: []
@@ -118,6 +207,16 @@ function parseResumeText(text) {
   const summaryMatch = text.match(/(?:SUMMARY|PROFESSIONAL SUMMARY|OBJECTIVE|PROFILE|ABOUT)[:\n]+([\s\S]*?)(?=\n\n[A-Z]|EXPERIENCE|SKILLS|EDUCATION|$)/i)
   if (summaryMatch) {
     resumeData.summary = summaryMatch[1].trim().substring(0, 600)
+  }
+
+  // Extract accomplishments / awards / achievements
+  const accomMatch = text.match(/(?:ACCOMPLISHMENTS|ACHIEVEMENTS|AWARDS|HONORS)[:\n]+([\s\S]*?)(?=\n\n[A-Z]|EXPERIENCE|SKILLS|EDUCATION|PROJECTS|$)/i)
+  if (accomMatch) {
+    const accomText = accomMatch[1]
+    const items = accomText.split(/[,•|·\n]/)
+      .map(s => s.trim())
+      .filter(s => s && s.length > 2)
+    resumeData.accomplishments = [...new Set(items)].slice(0, 50)
   }
 
   // Extract work experience

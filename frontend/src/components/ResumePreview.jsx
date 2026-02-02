@@ -125,9 +125,9 @@ export default function ResumePreview({ resumeData }) {
                       </div>
                       <span className="text-gray-500 text-sm">{exp.duration}</span>
                     </div>
-                    <ul className="list-disc list-inside space-y-1 text-gray-700">
+                    <ul className="list-disc list-inside space-y-2 text-gray-700 pl-5">
                       {exp.responsibilities?.map((resp, idx) => (
-                        <li key={idx}>{resp}</li>
+                        <li key={idx} className="leading-relaxed">{resp}</li>
                       ))}
                     </ul>
                   </div>
@@ -151,6 +151,19 @@ export default function ResumePreview({ resumeData }) {
                     </div>
                   </div>
                 ))}
+              </section>
+            )}
+
+            {resumeData.accomplishments && resumeData.accomplishments.length > 0 && (
+              <section className="mb-6">
+                <h2 className="text-2xl font-bold text-gray-800 mb-3 border-b-2 border-blue-600 pb-2">
+                  Accomplishments
+                </h2>
+                <ul className="list-disc list-inside space-y-2 text-gray-700 pl-5">
+                  {resumeData.accomplishments.map((a, i) => (
+                    <li key={i} className="leading-relaxed">{a}</li>
+                  ))}
+                </ul>
               </section>
             )}
 
