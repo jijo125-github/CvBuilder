@@ -227,6 +227,57 @@ export default function JobDescriptionInput({ jobDescription, setJobDescription,
                   </ul>
                 </div>
               )}
+
+              {/* Suggested Projects */}
+              {parsedData.projects && parsedData.projects.length > 0 && (
+                <div className="mt-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-medium text-gray-700">Suggested Projects</div>
+                    <button
+                      onClick={() => {
+                        const existing = resumeData.projects || []
+                        const toAdd = parsedData.projects.filter(p => !existing.some(e => e.title === p.title))
+                        if (toAdd.length) setResumeData({ ...resumeData, projects: [...existing, ...toAdd] })
+                      }}
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      Add all
+                    </button>
+                  </div>
+
+                  <div className="mt-2 space-y-3">
+                    {parsedData.projects.map((p, i) => (
+                      <div key={i} className="p-3 border rounded bg-white flex justify-between items-start">
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">{p.title}{p.suggested ? ' (suggested)' : ''}</div>
+                          <div className="text-xs text-gray-600 mt-1">{p.summary}</div>
+                          {p.impact && <div className="text-xs text-gray-500 mt-1">Impact: {p.impact}</div>}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <button
+                            onClick={() => {
+                              const existing = resumeData.projects || []
+                              if (!existing.some(e => e.title === p.title)) setResumeData({ ...resumeData, projects: [...existing, p] })
+                            }}
+                            className="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+                          >
+                            Add
+                          </button>
+                          <button
+                            onClick={() => {
+                              // copy to clipboard for manual use
+                              navigator.clipboard?.writeText(`${p.title}\n${p.summary}\nImpact: ${p.impact || ''}`)
+                            }}
+                            className="px-3 py-1 text-sm bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {showPreview && parsedData && parsedData.updatedResume && (

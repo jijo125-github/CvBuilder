@@ -2,7 +2,6 @@ import { useState } from 'react'
 import ChatInterface from './components/ChatInterface'
 import ResumePreview from './components/ResumePreview'
 import JobDescriptionInput from './components/JobDescriptionInput'
-import ResumeInput from './components/ResumeInput'
 import ResumeUpload from './components/ResumeUpload'
 
 function App() {
@@ -13,7 +12,8 @@ function App() {
     summary: 'Experienced professional with expertise in...',
     experience: [],
     education: [],
-    skills: []
+    skills: [],
+    projects: []
   })
   
   const [jobDescription, setJobDescription] = useState('')
@@ -58,11 +58,6 @@ function App() {
           setResumeData={setResumeData}
           setMessages={setChatMessages}
         />
-        <ResumeInput 
-          resumeData={resumeData}
-          setResumeData={setResumeData}
-        />
-        
         <JobDescriptionInput 
           jobDescription={jobDescription}
           setJobDescription={setJobDescription}
